@@ -85,6 +85,7 @@ with pkgs;
   sodium = [ libsodium ];
   gfortran = [ gfortran.cc.lib ];
   ssh2 = [ libssh2 ];
+  gpiod = [ libgpio ];
 }
 # -- windows
 // { advapi32 = null; gdi32 = null; imm32 = null; msimg32 = null;
