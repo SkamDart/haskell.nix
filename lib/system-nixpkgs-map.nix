@@ -9,7 +9,8 @@ with pkgs;
 let
   # On windows systems we need these to be propagatedBuildInputs so that the DLLs will be found.
   gcclibs = if pkgs.stdenv.hostPlatform.isWindows then [
-    pkgs.windows.mcfgthreads
+    # Find the versions of mcfgthreads used by stdenv.cc
+    (pkgs.threadsCrossFor or (_x: { package = pkgs.windows.mcfgthreads; }) pkgs.stdenv.cc.version).package
     # If we just use `pkgs.buildPackages.gcc.cc` here it breaks the `th-dlls` test. TODO figure out why exactly.
     (pkgs.buildPackages.runCommand "gcc-only" { nativeBuildInputs = [ pkgs.buildPackages.xorg.lndir ]; } ''
       mkdir $out
@@ -20,7 +21,11 @@ in
 # -- linux
 { crypto = [ openssl ];
   "c++" = [ libcxx ];
-  "c++abi" = [ libcxxabi ];
+  # at some point this happened:
+  #
+  #    error: 'libcxxabi' was merged into 'libcxx'
+  #
+  "c++abi" = if (__tryEval libcxxabi).success then [ libcxxabi ] else [ libcxx ];
   system-cxx-std-lib = [];
   "stdc++" = gcclibs;
   "stdc++-6" = gcclibs;
@@ -99,6 +104,7 @@ in
   # compile C sources (https://github.com/fpco/odbc/blob/master/cbits/odbc.c)
   odbc = [ unixODBC ];
   opencv = [ opencv3 ];
+  phonenumber = [ libphonenumber ];
   icuuc = [ icu ];
   icui18n = [ icu ];
   icu-i18n = [ icu ];
@@ -135,7 +141,11 @@ in
      Crypt32 = null;
      mswsock = null;
      bcrypt = null;
+     dnsapi = null;
    }
+# -- mingw32
+// { mingwex = null;
+}
 # -- os x
 # NB: these map almost 1:1 to the framework names
 // darwin.apple_sdk.frameworks

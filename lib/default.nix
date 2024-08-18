@@ -76,7 +76,7 @@ in {
         config.package.buildable # Set manually in a module (allows whole packages to be disabled)
         && comp.buildable        # Set based on `buildable` in `.cabal` files
         && comp.planned;         # Set if the component was in the `plan.json`
-      buildableAttrs = lib.filterAttrs (n: isBuildable);
+      buildableAttrs = lib.filterAttrs (_n: isBuildable);
       libComp = if comps.library == null || !(isBuildable comps.library)
         then {}
         else lib.mapAttrs applyLibrary (removeAttrs comps (subComponentTypes ++ [ "setup" ]));
@@ -98,12 +98,12 @@ in {
   # Was there a reference to the package source in the `cabal.project` or `stack.yaml` file.
   # This is used to make the default `packages` list for `shellFor`.
   isLocalPackage = p: p.isLocal or false;
-  selectLocalPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p);
+  selectLocalPackages = lib.filterAttrs (_n: p: p != null && isLocalPackage p);
 
   # if it's a project package it has a src attribute set with an origSubDir attribute.
   # project packages are a subset of localPackages
   isProjectPackage = p: p.isProject or false;
-  selectProjectPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && isProjectPackage p);
+  selectProjectPackages = lib.filterAttrs (_n: p: p != null && isLocalPackage p && isProjectPackage p);
 
   # Format a componentId as it should appear as a target on the
   # command line of the setup script.
@@ -156,14 +156,14 @@ in {
   #     to: tests.mypackage.unit-tests
   #
   collectComponents = group: packageSel: haskellPackages:
-    let packageToComponents = name: package:
+    let packageToComponents = _name: package:
           # look for the components with this group if there are any
           let components = package.components.${group} or {};
           # set recurseForDerivations unless it's a derivation itself (e.g. the "library" component) or an empty set
           in if lib.isDerivation components || components == {}
              then components
              else recurseIntoAttrs components;
-        packageFilter = name: package: (package.isHaskell or false) && packageSel package;
+        packageFilter = _name: package: (package.isHaskell or false) && packageSel package;
         filteredPkgs = lib.filterAttrs packageFilter haskellPackages;
         # at this point we can filter out packages that don't have any of the given kind of component
         packagesByComponent = lib.filterAttrs (_: components: components != {}) (lib.mapAttrs packageToComponents filteredPkgs);
@@ -182,7 +182,7 @@ in {
   #
   # This can be used to collect all the test runs in your project, so that can be run in CI.
   collectChecks = packageSel: haskellPackages:
-    let packageFilter = name: package: (package.isHaskell or false) && packageSel package;
+    let packageFilter = _name: package: (package.isHaskell or false) && packageSel package;
     in recurseIntoAttrs (lib.mapAttrs (_: p: p.checks) (lib.filterAttrs packageFilter haskellPackages));
 
   # Equivalent to collectChecks with (_: true) as selection function.
@@ -231,6 +231,7 @@ in {
   # Check a test component
   check = import ./check.nix {
     inherit stdenv lib haskellLib;
+    inherit (pkgs) buildPackages;
   };
 
   # Do coverage of a package
@@ -334,12 +335,24 @@ in {
             inherit (project) hsPkgs;
           })
         ];
-      }).config;
+      });
     in project;
 
   # Converts from a `compoent.depends` value to a library derivation.
   # In the case of sublibs the `depends` value should already be the derivation.
-  dependToLib = d: d.components.library or d;
+  dependToLib = d:
+    # Do simplify this to `d.components.library or d`, as that
+    # will not give a good error message if the `.library`
+    # is missing (happens if the package is unplanned,
+    # but has overrides).
+    # It would be nice to put an `assert` here, but there is
+    # currently no good way to get the name of the dependency
+    # when it is not in the plan.  The attribute path of
+    # `d` in the `nix` error should include the name
+    # eg. `packages.Cabal.components.library`.
+    if d ? components
+      then d.components.library
+      else d;
 
   projectOverlays = import ./project-overlays.nix {
     inherit lib haskellLib;
@@ -569,11 +582,6 @@ in {
     inherit (pkgs.buildPackages.buildPackages) lib runCommand;
   };
 
-  makeDummyGhcData = import ./make-dummy-ghc-data.nix {
-    inherit pkgs;
-    inherit (pkgs.buildPackages.buildPackages) runCommand;
-  };
-
   # Here we try to figure out which qemu to use based on the host platform.
   # This guess can be overridden by passing qemuSuffix
   qemuByHostPlatform = hostPlatform:
@@ -603,4 +611,6 @@ in {
         __toJSON (__attrNames (lib.filterAttrs (_: v: __length v > 1) (
           builtins.groupBy (x: if __typeOf x == "set" then x.name or "noname" else "notset") x)))
       }";
+
+  types = import ./types.nix { inherit lib; };
 }

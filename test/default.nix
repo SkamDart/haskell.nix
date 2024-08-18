@@ -6,6 +6,16 @@
     config = haskellNix.nixpkgsArgs.config // {
       permittedInsecurePackages = ["libdwarf-20210528" "libdwarf-20181024" "dwarfdump-20181024"];
     };
+    overlays = haskellNix.nixpkgsArgs.overlays ++ [
+      (final: prev: {
+        haskell-nix = prev.haskell-nix // {
+          extraPkgconfigMappings = prev.haskell-nix.extraPkgconfigMappings or {} // {
+            "libsodium" = [ "libsodium-18" ];
+          };
+        };
+        libsodium-18 = (final.callPackage (haskellNix.sources.nixpkgs-2311 + "/pkgs/development/libraries/libsodium") {}).overrideAttrs (_: { dontDisableStatic = true; });
+      })
+    ];
   }
 , evalPackages ? import pkgs.path nixpkgsArgs
 , ifdLevel ? 1000
@@ -17,7 +27,7 @@
 with pkgs;
 
 let
-  inherit (import ../ci-lib.nix { inherit pkgs; }) filterAttrsOnlyRecursive;
+  inherit (import ../ci-lib.nix { inherit lib; }) filterAttrsOnlyRecursive;
   isDisabled = d: d.meta.disabled or false;
 
   # Set recurseForDerivations for both children and grand-children values in
@@ -54,7 +64,7 @@ let
         else val
       );
 
-  util = import ./util.nix { cabal-install = pkgs.buildPackages.haskell-nix.cabal-install.${compiler-nix-name}; };
+  util = import ./util.nix { cabal-install = pkgs.buildPackages.haskell-nix.nix-tools-unchecked.exes.cabal; };
 
   # Map the values in an association list over the withIfdInputs function.
   #
@@ -175,6 +185,7 @@ let
     with-packages = callTest ./with-packages { inherit util; };
     builder-haddock = callTest ./builder-haddock {};
     stack-simple = callTest ./stack-simple {};
+    stack-compiler = callTest ./stack-compiler {};
     stack-local-resolver = callTest ./stack-local-resolver {};
     stack-local-resolver-subdir = callTest ./stack-local-resolver-subdir {};
     stack-remote-resolver = callTest ./stack-remote-resolver {};
@@ -210,13 +221,19 @@ let
     githash = haskell-nix.callPackage ./githash { inherit compiler-nix-name evalPackages; testSrc = testSrcWithGitDir; };
     c-ffi = callTest ./c-ffi { inherit util; };
     th-dlls = callTest ./th-dlls { inherit util; };
+    th-dlls-minimal = callTest ./th-dlls-minimal { inherit util; };
     external-static-plugin = callTest ./external-static-plugin {};
     exe-dlls = callTest ./exe-dlls { inherit util; };
     exe-lib-dlls = callTest ./exe-lib-dlls { inherit util; };
     ca-derivations = callTest ./ca-derivations { inherit CADerivationsEnabled; };
     ca-derivations-include = callTest ./ca-derivations-include { inherit CADerivationsEnabled; };
     test-only = callTest ./test-only { inherit util; };
+    annotations = callTest ./annotations { inherit util; };
     cabal-project-nix-path = callTest ./cabal-project-nix-path {};
+    plugin = callTest ./plugin {};
+    supported-languages = callTest ./supported-langauges {};
+    js-template-haskell = callTest ./js-template-haskell {};
+    gi-gtk = callTest ./gi-gtk { inherit util; };
     unit = unitTests;
   };
 

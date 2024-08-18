@@ -1,4 +1,4 @@
-{ stdenv, lib, haskell-nix, haskellLib, recurseIntoAttrs, testSrc, compiler-nix-name, evalPackages, runCommand, gitMinimal, buildPackages }:
+{ stdenv, lib, haskell-nix, haskellLib, recurseIntoAttrs, testSrc, compiler-nix-name, evalPackages, runCommand, gitReallyMinimal, buildPackages }:
 
 with lib;
 
@@ -9,14 +9,14 @@ let
     # seem to cross compile (so this test is disabled for cross compilation in
     # the test/default.nix file).
     # Using buildPackages here is not right, but at least gets musl64 test to pass.
-    if stdenv.hostPlatform != stdenv.buildPlatform
+    if stdenv.hostPlatform != stdenv.buildPlatform && !stdenv.hostPlatform.isMusl
       then buildPackages.buildPackages.gitReallyMinimal
-      else gitMinimal;
+      else gitReallyMinimal;
   project = haskell-nix.cabalProject' {
     inherit src;
-    # When haskell.nix has come from the store (e.g. on hydra) we need to provide
-    # a suitable mock of the cleaned source with a .git dir.
-    modules = (optional (!(src ? origSrc && __pathExists (src.origSrc + "/.git"))) {
+    cabalProjectLocal = builtins.readFile ../cabal.project.local;
+    # Mock the .git dir to avoid rebuilding on every commit.
+    modules = [{
       packages.githash-test.src =
         rec {
           origSrc = evalPackages.runCommand "githash-test-src" { nativeBuildInputs = [ evalPackages.gitReallyMinimal ]; } ''
@@ -31,7 +31,6 @@ let
           origSrcSubDir = origSrc + origSubDir;
           outPath = origSrcSubDir;
         };
-      }) ++ [{
         packages.githash-test.components.exes.githash-test.build-tools = mkForce [ git ];
       }];
     inherit compiler-nix-name evalPackages;
@@ -59,7 +58,7 @@ in recurseIntoAttrs {
       exe="${githash-test}/bin/githash-test${stdenv.hostPlatform.extensions.executable}"
       echo Checking that the error message is generated and that it came from the right place:
       (${toString githash-test.config.testWrapper} $exe || true) 2>&1 \
-        | grep "error, called at src/Main.hs:5:13 in main:Main"
+        | grep "error, called at src/Main.hs:5:13 in .*:Main"
       touch $out
     '';
 

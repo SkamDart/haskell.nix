@@ -10,6 +10,11 @@ let
 in
 
 {
+  # Packages in that are `pre-existing` in the cabal plan
+  options.preExistingPkgs = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [];
+  };
   # This has a slightly modified option type. We will *overwrite* any previous
   # setting of nonRelocatablePkgs, instead of merging them.  Otherwise you
   # have no chance of removing packages retroactively.  We might improve this
@@ -18,13 +23,13 @@ in
   # This seems ugly.
   options.nonReinstallablePkgs = lib.mkOption {
     type = (lib.types.listOf lib.types.str) // {
-      merge = loc: defs: lib.last (lib.getValues defs);
+      merge = _loc: defs: lib.last (lib.getValues defs);
     };
   };
 
   options.reinstallableLibGhc = lib.mkOption {
     type = lib.types.bool;
-    default = true;
+    default = !pkgs.stdenv.hostPlatform.isGhcjs;
     description = "Is lib:ghc reinstallable?";
   };
   options.setup-depends = lib.mkOption {
@@ -53,22 +58,23 @@ in
   #
   # without reinstallable-lib:ghc, this is significantly larger.
 
-  config.nonReinstallablePkgs =
+  config.nonReinstallablePkgs = if config.preExistingPkgs != []
+   then ["rts"] ++ config.preExistingPkgs
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "8.11" < 0 && pkgs.stdenv.hostPlatform.isGhcjs) [
+      "ghcjs-prim" "ghcjs-th"]
+   else
     [ "rts" "ghc-prim" "integer-gmp" "integer-simple" "base"
       "deepseq" "array" "ghc-boot-th" "pretty" "template-haskell"
       # ghcjs custom packages
       "ghcjs-prim" "ghcjs-th"
     ]
-    # TODO make this unconditional
-    ++ lib.optionals (
-      __elem config.compiler.nix-name ["ghc901" "ghc902" "ghc921" "ghc922" "ghc923" "ghc924" "ghc925" "ghc926" "ghc927" "ghc928" "ghc941" "ghc942" "ghc943" "ghc944" "ghc945" "ghc961" "ghc962" "ghc96020230302"])
-      (["ghc-bignum"]
-        # stm and exceptions are needed by the GHC package since 9.0.1
-        ++ lib.optionals (!config.reinstallableLibGhc) ["stm" "exceptions"])
-    ++ lib.optionals (
-      __elem config.compiler.nix-name ["ghc925" "ghc926" "ghc927" "ghc928" "ghc941" "ghc942" "ghc943" "ghc944" "ghc945" "ghc961" "ghc962" "ghc96020230302"]) [
-      "system-cxx-std-lib" ]
-    ++ lib.optionals (!config.reinstallableLibGhc) [
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "8.11" >= 0) [
+      "ghc-bignum"]
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "9.1" >= 0) [
+      "system-cxx-std-lib"]
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "9.9" >= 0) [
+      "ghc-internal"]
+    ++ lib.optionals (!config.reinstallableLibGhc) ([
       "ghc-boot"
       "ghc" "Cabal" "Win32" "array" "binary" "bytestring" "containers"
       "directory" "filepath" "ghc-boot" "ghc-compact" "ghc-prim"
@@ -76,8 +82,15 @@ in
       "hpc"
       "mtl" "parsec" "process" "text" "time" "transformers"
       "unix" "xhtml" "terminfo"
-      # "stm"
     ]
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "8.11" >= 0) [
+      # stm and exceptions are needed by the GHC package since 9.0.1
+      "stm" "exceptions"]
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "9.8.1" >= 0) [
+      "semaphore-compat"]
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "9.9" >= 0) [
+      "os-string"]
+    )
     ++ lib.optionals (!config.reinstallableLibGhc || __elem config.compiler.nix-name ["ghc865"]) [
       "ghc-heap"
     ];
@@ -91,10 +104,10 @@ in
       "ghcjs-prim"
    ] ++ lib.optional (!config.reinstallableLibGhc) "ghc"
     ++ lib.optionals (
-      __elem config.compiler.nix-name ["ghc901" "ghc902" "ghc921" "ghc922" "ghc923" "ghc924" "ghc925" "ghc926" "ghc927" "ghc928" "ghc941" "ghc942" "ghc943" "ghc944" "ghc945" "ghc961" "ghc962" "ghc96020230302"]) [
+      !__elem config.compiler.nix-name ["ghc865" "ghc881" "ghc882" "ghc883" "ghc884" "ghc8101" "ghc8102" "ghc8103" "ghc8104" "ghc8105" "ghc8106" "ghc8107"]) [
       "ghc-bignum" ]
     ++ lib.optionals (
-      __elem config.compiler.nix-name ["ghc941" "ghc942" "ghc943" "ghc944" "ghc945" "ghc961" "ghc962" "ghc96020230302"]) [
+      !__elem config.compiler.nix-name ["ghc865" "ghc881" "ghc882" "ghc883" "ghc884" "ghc8101" "ghc8102" "ghc8103" "ghc8104" "ghc8105" "ghc8106" "ghc8107" "ghc901" "ghc902"]) [
       "system-cxx-std-lib" ];
 
   options.hsPkgs = lib.mkOption {
@@ -103,9 +116,10 @@ in
 
   config.hsPkgs =
     { inherit (builder) shellFor makeConfigFiles ghcWithPackages ghcWithHoogle;
-      buildPackages = buildModules.config.hsPkgs;
+      buildPackages = buildModules.config.hsPkgs; # TODO perhaps remove this
+      pkgsBuildBuild = buildModules.config.hsPkgs;
     } //
     lib.mapAttrs
-      (name: pkg: if pkg == null then null else builder.build-package config pkg)
+      (_name: pkg: if pkg == null then null else builder.build-package config pkg)
       (config.packages // lib.genAttrs (config.nonReinstallablePkgs ++ config.bootPkgs) (_: null));
 }

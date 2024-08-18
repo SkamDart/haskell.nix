@@ -96,11 +96,12 @@ fi
 
 if [ "$TESTS" == "multi-target" ] || [ "$TESTS" == "all" ]; then
   printf "*** Checking that a nix-shell works for a multi-target project...\n" >& 2
+  TEST_CABAL_DIR=$(mktemp -d)
   nix-shell $NIX_BUILD_ARGS \
       --pure ./default.nix \
       --argstr compiler-nix-name "$GHC" \
       -A cabal-simple.test-shell \
-      --run 'cd cabal-simple && CABAL_DIR=$(mktemp -d) cabal new-build'
+      --run "cd cabal-simple && CABAL_DIR=$TEST_CABAL_DIR cabal update && CABAL_DIR=$TEST_CABAL_DIR cabal build"
   echo >& 2
 fi
 
@@ -123,7 +124,7 @@ if [ "$TESTS" == "shellFor-multiple-package" ] || [ "$TESTS" == "all" ]; then
       --pure ./default.nix \
       --argstr compiler-nix-name $SHELL_FOR_GHC \
       -A shell-for.envPkga \
-      --run 'cd shell-for && CABAL_DIR=$(mktemp -d) cabal new-build --project=single.project all'
+      --run 'cd shell-for && CABAL_DIR=$(mktemp -d) cabal new-build --project-file=single.project all'
   echo >& 2
 fi
 
@@ -199,6 +200,14 @@ if [ "$TESTS" == "hix" ] || [ "$TESTS" == "all" ]; then
       --accept-flake-config \
       -c cabal build
   popd
+  cd "$HASKELL_NIX/test"
+  echo >& 2
+fi
+
+if [ "$TESTS" == "template" ] || [ "$TESTS" == "all" ]; then
+  printf "*** End-2-end test of templates#haskell-nix project initialization and flakes development shell ...\n" >& 2
+  HASKELL_NIX=$(pwd)/..
+  cd "$(mktemp -d)"
   mkdir "from-template" && pushd "from-template"
   nix-shell -p cabal-install --run "cabal update; cabal unpack hello"
   cd hello-*

@@ -6,9 +6,7 @@ let
   project = cabalProject' {
     inherit compiler-nix-name evalPackages;
     src = testSrc "shell-for-setup-deps";
-    cabalProjectLocal = lib.optionalString (__elem compiler-nix-name ["ghc96020230302" "ghc961"]) ''
-      allow-newer: *:base, *:ghc-prim, *:template-haskell
-    '';
+    cabalProjectLocal = builtins.readFile ../cabal.project.local;
     modules = [{
       # Package has no exposed modules which causes
       #   haddock: No input file(s)
@@ -29,7 +27,9 @@ in recurseIntoAttrs ({
   meta.disabled = stdenv.buildPlatform != stdenv.hostPlatform
     || compiler-nix-name == "ghc901" || compiler-nix-name == "ghc902" ||
     # TH breaks for ghc 9.4.3 cross compile for macOS with this test
-    (stdenv.hostPlatform.isDarwin && __elem compiler-nix-name ["ghc941" "ghc942" "ghc943" "ghc944"]);
+    (stdenv.hostPlatform.isDarwin && __elem compiler-nix-name ["ghc941" "ghc942" "ghc943" "ghc944"]) ||
+    # Segfaults in ghc-pkg on aarc64-linux for GHC 8.10
+    (stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isAarch64 && compiler-nix-name == "ghc8107");
   ifdInputs = {
     inherit (project) plan-nix;
   };

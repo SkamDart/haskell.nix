@@ -7,12 +7,7 @@ let
   project = cabalProject' {
     inherit compiler-nix-name evalPackages;
     src = testSrc "sublib-docs";
-    cabalProject = ''
-      packages: .
-      allow-newer: aeson:*
-    '' + lib.optionalString (__elem compiler-nix-name ["ghc96020230302" "ghc961"]) ''
-      allow-newer: *:base, *:ghc-prim, *:template-haskell
-    '';
+    cabalProjectLocal = builtins.readFile ../cabal.project.local;
   };
 
   packages = project.hsPkgs;
